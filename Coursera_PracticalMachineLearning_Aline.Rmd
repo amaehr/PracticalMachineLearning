@@ -1,0 +1,162 @@
+---
+title: "Coursera Practical Machine Learning - Course Project"
+author: "Aline Meret Mähr"
+date: "3/24/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+In this project, the goal is  to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Data Source
+Data is available here:  
+Training: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv  
+Test: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv  
+
+
+## Libraries
+First we load the libraries needed for this project.  
+
+```{r libraries, message=FALSE}
+library(caret)
+library(rattle)
+library(randomForest)
+library(gbm)
+```
+
+## Loading Data and explore
+
+We load the two datasets and have a first look at them by calling the dimensions fuction.
+
+```{r trainingdata}
+#Training Data
+TrainData <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"),header=TRUE)
+dim(TrainData)
+```
+```{r testdata}
+TestData <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"),header=TRUE)
+dim(TestData)
+```
+
+The training set has 19622 observation and 160 columns. Through visual inspection, we saw that many columns only contained NA values or were empty. These can be removed. As a threshold we decide that columns that contain >80% NA or blank entries will be removed. 
+
+```{r clean}
+removeCol <- which(colSums(is.na(TrainData)|TrainData=="")>0.8*dim(TrainData)[1])
+TrainDataClean <- TrainData[,-removeCol]
+TrainDataClean <- TrainDataClean[,-(1:5)]
+dim(TrainDataClean)
+```
+We do the same for the test data.
+
+```{r cleantest}
+removeColTe <- which(colSums(is.na(TestData) |TestData=="")>0.9*dim(TestData)[1]) 
+TestDataClean <- TestData[,-removeColTe]
+TestDataClean <- TestDataClean[,-(1:5)]
+dim(TestDataClean)
+```
+
+Now we can partition the trainin data set into two, 70% of the data for the modeling proces and 30% for the vaidation. The test data set remains unused and will only be used at the end. 
+```{r partitioning}
+set.seed(2566)
+inTrain <- createDataPartition(TrainDataClean$classe, p=0.7, list=FALSE)
+Train <- TrainDataClean[inTrain,]
+Test <- TrainDataClean[-inTrain,]
+dim(Train)
+```
+
+## Predicition Models
+For this project, three different methods will be applied to model the regressions on the traininig dataset (1. Random Forest, 2. Classification Tree, 3. Gradient boosting). The model with the highest accuracy will then be applied to the test dataset.
+
+### Random Forest
+Building the model
+```{r rf}
+set.seed(246)
+trControl <- trainControl(method="cv", number=5)
+modelRF <- train(classe~., data=Train, method="rf", trControl=trControl, verbose=FALSE)
+modelRF$finalModel
+```
+Prediction on test data
+```{r}
+predictRF <- predict(modelRF, newdata=Test)
+confidenceMatRF <- confusionMatrix(predictRF, Test$classe)
+confidenceMatRF
+```
+Plot the model accuracy by numbers of 
+```{r rfplot}
+plot(modelRF,main="Accuracy of Random Forest Model by Number of Predictors")
+````
+
+Overall Accuracy
+```{r accRF}
+confidenceMatRF$overall
+````
+Using ranom forest with a crossvalidation in 5 steps we reach an overall model accuracy of 99.7%. 
+
+### Classification Trees
+
+Here we use a classification tree.
+```{r ct}
+modelCT <- train(classe~., data=Train, method="rpart",trControl=trControl)
+
+#plot 
+fancyRpartPlot(modelCT$finalModel)
+````
+Now we apply it to the training data
+```{r cttrain}
+trainpredCT <- predict(modelCT, newdata = Test)
+
+confidenceMatCT <- confusionMatrix(Test$classe, trainpredCT)
+
+#display matrix
+confidenceMatCT
+
+#display model accuracy overall
+confidenceMatCT$overall
+
+````
+We can conclude that the model accuracy is very low (52%) compared to the random forest model (99.7%). 
+
+### Gradient Boosting Method
+First we build the control and model
+```{r gbm}
+set.seed(132)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+
+modelGBM <- train(classe~., data = Train, method= "gbm", trControl=controlGBM, verbose=FALSE)
+
+modelGBM$finalModel
+```
+
+```{r plotGBM}
+#plot the model
+plot(modelGBM)
+```
+
+Now we predict on Test dataset
+```{r predgbm}
+predictGBM <- predict(modelGBM, newdata=Test)
+confidenceMatGBM <- confusionMatrix(predictGBM, Test$classe)
+confidenceMatGBM
+````
+We look at the overall accuracy with 5 folds.
+```{r accGBM}
+confidenceMatGBM$overall[1]
+````
+
+##Model selection and application to test data
+The accuracy of the three models applied are:
+	1. Random Forest: 99.7%
+	2. Decision Tree: 52%
+	3. GBM: 98.5%
+
+Given that the random forest method yielded the highest accuracy it will be applied to the test data.
+```{r final}
+PredictFinal <- predict(modelRF, newdata = TestDataClean)
+PredictFinal
+```
